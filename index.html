@@ -408,6 +408,7 @@
             let hasUnsavedChanges = false;
             let chartVisible = false;
             let selectedYear = new Date().getFullYear();
+            let updateTimeout = null;
 
             // Initialize Supabase client
             try {
@@ -418,7 +419,6 @@
                 console.warn('Supabase not configured, using localStorage only');
             }
 
-            // Show status message
             function showStatus(message, type) {
                 const statusDiv = document.getElementById('status');
                 statusDiv.textContent = message;
@@ -432,7 +432,6 @@
                 }
             }
 
-            // Load data from Supabase or localStorage
             async function loadData() {
                 try {
                     if (dbClient) {
@@ -470,7 +469,6 @@
                 }
             }
 
-            // Save data to Supabase and localStorage
             async function saveData() {
                 try {
                     showStatus('שומר נתונים...', 'loading');
@@ -541,11 +539,22 @@
                     expenses[index][field] = String(-numValue);
                 }
                 
-                renderTable();
+                const input = document.getElementById(`input-${index}-${field}`);
+                if (input) {
+                    input.value = expenses[index][field];
+                }
+                
+                const totalCell = document.getElementById(`total-${index}`);
+                if (totalCell) {
+                    const total = calculateTotal(expenses[index]);
+                    totalCell.textContent = total;
+                    totalCell.className = total < 0 ? 'negative' : '';
+                }
+                
+                updateTotalsOnly();
                 markAsChanged();
                 
                 setTimeout(() => {
-                    const input = document.getElementById(`input-${index}-${field}`);
                     if (input) {
                         input.focus();
                         input.setSelectionRange(input.value.length, input.value.length);
@@ -556,7 +565,19 @@
             function updateValue(index, field, value) {
                 const sanitized = value.replace(/[^\d.-]/g, '');
                 expenses[index][field] = sanitized;
-                renderTable();
+                
+                const totalCell = document.getElementById(`total-${index}`);
+                if (totalCell) {
+                    const total = calculateTotal(expenses[index]);
+                    totalCell.textContent = total;
+                    totalCell.className = total < 0 ? 'negative' : '';
+                }
+                
+                clearTimeout(updateTimeout);
+                updateTimeout = setTimeout(() => {
+                    updateTotalsOnly();
+                }, 300);
+                
                 markAsChanged();
             }
 
@@ -613,7 +634,7 @@
                         <td>
                             <button class="btn-delete" onclick="app.deleteRow(${index})">🗑️</button>
                         </td>
-                        <td class="${totalClass}">${total}</td>
+                        <td id="total-${index}" class="${totalClass}">${total}</td>
                         <td>
                             <div class="input-wrapper">
                                 <button class="btn-minus" onclick="app.toggleMinus(${index}, 'done')">-</button>
@@ -647,13 +668,10 @@
                     tbody.appendChild(tr);
                 });
 
-                renderTotals();
-                if (chartVisible) {
-                    renderChart();
-                }
+                updateTotalsOnly();
             }
 
-            function renderTotals() {
+            function updateTotalsOnly() {
                 const totalsDiv = document.getElementById('totals');
                 const yearlyData = {};
                 let grandTotal = 0;
@@ -720,6 +738,10 @@
                 `;
 
                 totalsDiv.innerHTML = totalsHTML;
+
+                if (chartVisible) {
+                    renderChart();
+                }
             }
 
             function toggleChart() {
@@ -774,19 +796,16 @@
                     }
                 });
 
-                // Chart dimensions
                 const width = 600;
                 const height = 300;
                 const padding = { top: 20, right: 20, bottom: 40, left: 50 };
                 const chartWidth = width - padding.left - padding.right;
                 const chartHeight = height - padding.top - padding.bottom;
 
-                // Y-axis range: -2000 to 5000
                 const minY = -2000;
                 const maxY = 5000;
                 const range = maxY - minY;
 
-                // Scale function
                 const scaleY = (value) => {
                     return padding.top + chartHeight - ((value - minY) / range) * chartHeight;
                 };
@@ -795,10 +814,8 @@
                     return padding.left + (index * chartWidth / 11);
                 };
 
-                // Build SVG
                 let svgContent = '';
 
-                // Grid lines
                 for (let i = 0; i <= 7; i++) {
                     const value = minY + (i * 1000);
                     const y = scaleY(value);
@@ -806,11 +823,9 @@
                     svgContent += `<text x="${padding.left - 5}" y="${y + 4}" text-anchor="end" class="chart-text">${value}</text>`;
                 }
 
-                // Zero line (thicker)
                 const zeroY = scaleY(0);
                 svgContent += `<line x1="${padding.left}" y1="${zeroY}" x2="${width - padding.right}" y2="${zeroY}" class="chart-axis"/>`;
 
-                // Line path
                 let pathData = '';
                 monthlyTotals.forEach((value, index) => {
                     const x = scaleX(index);
@@ -822,22 +837,14 @@
                     }
                 });
 
-                // Area fill
                 let areaPath = pathData + ` L ${scaleX(11)} ${zeroY} L ${scaleX(0)} ${zeroY} Z`;
                 svgContent += `<path d="${areaPath}" class="chart-area"/>`;
-
-                // Line
                 svgContent += `<path d="${pathData}" class="chart-line"/>`;
 
-                // Dots and labels
                 monthlyTotals.forEach((value, index) => {
                     const x = scaleX(index);
                     const y = scaleY(value);
-                    
-                    // Dot
                     svgContent += `<circle cx="${x}" cy="${y}" r="4" class="chart-dot"/>`;
-                    
-                    // Month label
                     svgContent += `<text x="${x}" y="${height - 10}" text-anchor="middle" class="chart-text">${monthNames[index]}</text>`;
                 });
 
