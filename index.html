@@ -1,9 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
+!DOCTYPE html>
+<html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Eran - Expense Tracker</title>
+    <title>ערן - מעקב הוצאות</title>
     <style>
         * {
             box-sizing: border-box;
@@ -33,6 +33,12 @@
             color: #1a1a1a;
             margin-bottom: 20px;
             font-size: 24px;
+        }
+
+        h2 {
+            font-size: 20px;
+            margin-bottom: 16px;
+            color: #1a1a1a;
         }
 
         .status {
@@ -98,6 +104,10 @@
             background: #9333ea;
         }
 
+        .btn-chart {
+            background: #f59e0b;
+        }
+
         .btn-delete {
             background: #ef4444;
             padding: 6px 10px;
@@ -121,7 +131,7 @@
         th, td {
             padding: 10px 8px;
             border: 1px solid #e5e7eb;
-            text-align: left;
+            text-align: right;
         }
 
         th {
@@ -139,6 +149,7 @@
             border: 1px solid #e5e7eb;
             border-radius: 4px;
             font-size: 16px;
+            text-align: right;
         }
 
         input[type="date"] {
@@ -153,6 +164,7 @@
             background: white;
             padding: 16px;
             border-radius: 8px;
+            margin-bottom: 16px;
         }
 
         .totals h3 {
@@ -175,6 +187,22 @@
             font-size: 18px;
         }
 
+        .year-section {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 2px solid #3b82f6;
+        }
+
+        .year-total {
+            background: #dbeafe;
+            color: #1e40af;
+            font-weight: bold;
+            font-size: 20px;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 8px;
+        }
+
         .empty-state {
             text-align: center;
             padding: 40px 20px;
@@ -184,6 +212,45 @@
         .empty-state p {
             margin-top: 8px;
             font-size: 14px;
+        }
+
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .chart-canvas {
+            max-width: 100%;
+            height: 300px;
+        }
+
+        .year-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .year-btn {
+            background: #6b7280;
+            padding: 8px 16px;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            border: none;
+            font-size: 14px;
+        }
+
+        .year-btn.active {
+            background: #3b82f6;
+        }
+
+        .negative {
+            color: #ef4444;
         }
 
         @media (max-width: 480px) {
@@ -197,6 +264,10 @@
 
             h1 {
                 font-size: 20px;
+            }
+
+            h2 {
+                font-size: 18px;
             }
 
             th, td {
@@ -213,43 +284,56 @@
                 padding: 8px 12px;
                 font-size: 13px;
             }
+
+            .chart-canvas {
+                height: 250px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>Eran - Expense Tracker</h1>
+        <h1>ערן - מעקב הוצאות</h1>
         
         <div id="status" class="status" style="display: none;"></div>
 
         <div class="button-group">
             <button class="btn-add" onclick="app.addRow()" id="addBtn">
-                ➕ Add Row
+                ➕ הוסף שורה
             </button>
             <button class="btn-save" onclick="app.saveData()" id="saveBtn" disabled>
-                💾 Save
+                💾 שמור
+            </button>
+            <button class="btn-chart" onclick="app.toggleChart()" id="chartBtn">
+                📊 גרף
             </button>
             <button class="btn-send" onclick="app.sendEmail()" id="sendBtn">
-                📧 Send
+                📧 שלח
             </button>
+        </div>
+
+        <div id="chartContainer" class="chart-container">
+            <h2>גרף חודשי</h2>
+            <div class="year-selector" id="yearSelector"></div>
+            <canvas id="monthlyChart" class="chart-canvas"></canvas>
         </div>
 
         <div class="table-container">
             <table id="expenseTable">
                 <thead>
                     <tr>
-                        <th>Date</th>
-                        <th>House</th>
-                        <th>Done</th>
-                        <th>All</th>
-                        <th>Action</th>
+                        <th>פעולה</th>
+                        <th>סה"כ</th>
+                        <th>בוצע</th>
+                        <th>בית</th>
+                        <th>תאריך</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">
                     <tr>
                         <td colspan="5" class="empty-state">
                             <div>📋</div>
-                            <p>No expenses yet. Click "Add Row" to start tracking.</p>
+                            <p>אין הוצאות עדיין. לחץ "הוסף שורה" כדי להתחיל.</p>
                         </td>
                     </tr>
                 </tbody>
@@ -260,6 +344,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         // Expense Tracker App
         const app = (() => {
@@ -270,6 +355,9 @@
             let dbClient = null;
             let expenses = [];
             let hasUnsavedChanges = false;
+            let chartInstance = null;
+            let chartVisible = false;
+            let selectedYear = new Date().getFullYear();
 
             // Initialize Supabase client
             try {
@@ -298,7 +386,7 @@
             async function loadData() {
                 try {
                     if (dbClient) {
-                        showStatus('Loading data...', 'loading');
+                        showStatus('טוען נתונים...', 'loading');
                         
                         const { data, error } = await dbClient
                             .from('expenses')
@@ -308,14 +396,14 @@
                         if (error) throw error;
 
                         expenses = data || [];
-                        showStatus('Data loaded successfully!', 'success');
+                        showStatus('הנתונים נטענו בהצלחה!', 'success');
                     } else {
                         // Use localStorage only
                         const savedData = localStorage.getItem('expenseData');
                         if (savedData) {
                             expenses = JSON.parse(savedData);
                         }
-                        showStatus('Using offline mode', 'loading');
+                        showStatus('משתמש במצב לא מקוון', 'loading');
                     }
                     
                     renderTable();
@@ -323,7 +411,7 @@
                     updateSaveButton();
                 } catch (error) {
                     console.error('Error loading data:', error);
-                    showStatus('Error loading data. Using offline mode.', 'error');
+                    showStatus('שגיאה בטעינת נתונים. משתמש במצב לא מקוון.', 'error');
                     
                     // Fallback to localStorage
                     const savedData = localStorage.getItem('expenseData');
@@ -337,7 +425,7 @@
             // Save data to Supabase and localStorage
             async function saveData() {
                 try {
-                    showStatus('Saving data...', 'loading');
+                    showStatus('שומר נתונים...', 'loading');
                     document.getElementById('saveBtn').disabled = true;
 
                     if (dbClient) {
@@ -368,16 +456,16 @@
                     // Always save to localStorage as backup
                     localStorage.setItem('expenseData', JSON.stringify(expenses));
 
-                    showStatus('Data saved successfully!', 'success');
+                    showStatus('הנתונים נשמרו בהצלחה!', 'success');
                     hasUnsavedChanges = false;
                     updateSaveButton();
                     
                     if (dbClient) {
-                        await loadData(); // Reload to get server IDs
+                        await loadData();
                     }
                 } catch (error) {
                     console.error('Error saving data:', error);
-                    showStatus('Error saving to cloud. Saved locally instead.', 'error');
+                    showStatus('שגיאה בשמירה לענן. נשמר מקומית במקום.', 'error');
                     localStorage.setItem('expenseData', JSON.stringify(expenses));
                     document.getElementById('saveBtn').disabled = false;
                 }
@@ -393,7 +481,7 @@
 
             // Delete row
             function deleteRow(index) {
-                if (confirm('Are you sure you want to delete this row?')) {
+                if (confirm('האם אתה בטוח שברצונך למחוק שורה זו?')) {
                     expenses.splice(index, 1);
                     renderTable();
                     markAsChanged();
@@ -417,12 +505,24 @@
             function updateSaveButton() {
                 const saveBtn = document.getElementById('saveBtn');
                 saveBtn.disabled = !hasUnsavedChanges;
-                saveBtn.textContent = hasUnsavedChanges ? '💾 Save *' : '💾 Save';
+                saveBtn.textContent = hasUnsavedChanges ? '💾 שמור *' : '💾 שמור';
             }
 
             // Calculate total for a row
             function calculateTotal(row) {
                 return (Number(row.house) || 0) + (Number(row.done) || 0);
+            }
+
+            // Get all years from data
+            function getYearsFromData() {
+                const years = new Set();
+                expenses.forEach(row => {
+                    if (row.date) {
+                        const year = new Date(row.date + 'T00:00:00').getFullYear();
+                        years.add(year);
+                    }
+                });
+                return Array.from(years).sort((a, b) => b - a);
             }
 
             // Render table
@@ -434,7 +534,7 @@
                         <tr>
                             <td colspan="5" class="empty-state">
                                 <div>📋</div>
-                                <p>No expenses yet. Click "Add Row" to start tracking.</p>
+                                <p>אין הוצאות עדיין. לחץ "הוסף שורה" כדי להתחיל.</p>
                             </td>
                         </tr>
                     `;
@@ -446,71 +546,108 @@
 
                 expenses.forEach((row, index) => {
                     const tr = document.createElement('tr');
+                    const total = calculateTotal(row);
+                    const totalClass = total < 0 ? 'negative' : '';
+                    
                     tr.innerHTML = `
                         <td>
-                            <input type="date" 
-                                value="${row.date || ''}" 
-                                onchange="app.updateValue(${index}, 'date', this.value)">
+                            <button class="btn-delete" onclick="app.deleteRow(${index})">🗑️</button>
+                        </td>
+                        <td class="${totalClass}">${total}</td>
+                        <td>
+                            <input type="number" 
+                                step="0.01"
+                                inputmode="decimal"
+                                value="${row.done || ''}" 
+                                onchange="app.updateValue(${index}, 'done', this.value)">
                         </td>
                         <td>
                             <input type="number" 
+                                step="0.01"
+                                inputmode="decimal"
                                 value="${row.house || ''}" 
                                 onchange="app.updateValue(${index}, 'house', this.value)">
                         </td>
                         <td>
-                            <input type="number" 
-                                value="${row.done || ''}" 
-                                onchange="app.updateValue(${index}, 'done', this.value)">
-                        </td>
-                        <td>${calculateTotal(row)}</td>
-                        <td>
-                            <button class="btn-delete" onclick="app.deleteRow(${index})">🗑️</button>
+                            <input type="date" 
+                                value="${row.date || ''}" 
+                                onchange="app.updateValue(${index}, 'date', this.value)">
                         </td>
                     `;
                     tbody.appendChild(tr);
                 });
 
                 renderTotals();
+                if (chartVisible) {
+                    renderChart();
+                }
             }
 
-            // Render totals
+            // Render totals with yearly breakdown
             function renderTotals() {
                 const totalsDiv = document.getElementById('totals');
-                const monthlyTotals = {};
+                const yearlyData = {};
                 let grandTotal = 0;
 
+                // Organize data by year and month
                 expenses.forEach(row => {
                     if (row.date) {
                         const date = new Date(row.date + 'T00:00:00');
-                        const month = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+                        const year = date.getFullYear();
+                        const month = date.toLocaleString('he-IL', { month: 'long', year: 'numeric' });
                         const rowTotal = calculateTotal(row);
-                        monthlyTotals[month] = (monthlyTotals[month] || 0) + rowTotal;
+                        
+                        if (!yearlyData[year]) {
+                            yearlyData[year] = { total: 0, months: {} };
+                        }
+                        
+                        yearlyData[year].months[month] = (yearlyData[year].months[month] || 0) + rowTotal;
+                        yearlyData[year].total += rowTotal;
                         grandTotal += rowTotal;
                     }
                 });
 
-                if (Object.keys(monthlyTotals).length === 0) {
+                if (Object.keys(yearlyData).length === 0) {
                     totalsDiv.style.display = 'none';
                     return;
                 }
 
                 totalsDiv.style.display = 'block';
-                let totalsHTML = '<h3>Monthly Totals:</h3>';
-                
-                Object.entries(monthlyTotals)
-                    .sort((a, b) => new Date(a[0]) - new Date(b[0]))
-                    .forEach(([month, total]) => {
-                        totalsHTML += `
-                            <div class="total-row">
-                                <span>${month}:</span>
-                                <span>${total.toFixed(0)}</span>
-                            </div>
-                        `;
-                    });
+                let totalsHTML = '';
 
+                // Sort years in descending order
+                const sortedYears = Object.keys(yearlyData).sort((a, b) => b - a);
+
+                sortedYears.forEach(year => {
+                    const yearData = yearlyData[year];
+                    totalsHTML += `<div class="year-section">`;
+                    totalsHTML += `<h3>סיכום ${year}</h3>`;
+                    
+                    Object.entries(yearData.months)
+                        .sort((a, b) => new Date(a[0]) - new Date(b[0]))
+                        .forEach(([month, total]) => {
+                            const totalClass = total < 0 ? 'negative' : '';
+                            totalsHTML += `
+                                <div class="total-row">
+                                    <span>${month}:</span>
+                                    <span class="${totalClass}">${total.toFixed(0)}</span>
+                                </div>
+                            `;
+                        });
+
+                    const yearTotalClass = yearData.total < 0 ? 'negative' : '';
+                    totalsHTML += `
+                        <div class="year-total ${yearTotalClass}">
+                            סה"כ ${year}: ${yearData.total.toFixed(0)}
+                        </div>
+                    `;
+                    totalsHTML += `</div>`;
+                });
+
+                const grandTotalClass = grandTotal < 0 ? 'negative' : '';
                 totalsHTML += `
-                    <div class="total-row grand-total">
-                        <span>Grand Total:</span>
+                    <div class="total-row grand-total ${grandTotalClass}">
+                        <span>סה"כ כללי:</span>
                         <span>${grandTotal.toFixed(0)}</span>
                     </div>
                 `;
@@ -518,14 +655,125 @@
                 totalsDiv.innerHTML = totalsHTML;
             }
 
+            // Toggle chart visibility
+            function toggleChart() {
+                chartVisible = !chartVisible;
+                const container = document.getElementById('chartContainer');
+                const btn = document.getElementById('chartBtn');
+                
+                if (chartVisible) {
+                    container.style.display = 'block';
+                    btn.textContent = '📊 הסתר גרף';
+                    renderYearSelector();
+                    renderChart();
+                } else {
+                    container.style.display = 'none';
+                    btn.textContent = '📊 גרף';
+                }
+            }
+
+            // Render year selector
+            function renderYearSelector() {
+                const years = getYearsFromData();
+                const selector = document.getElementById('yearSelector');
+                
+                if (years.length === 0) {
+                    selector.innerHTML = '<p>אין נתונים להצגה</p>';
+                    return;
+                }
+                
+                selector.innerHTML = years.map(year => 
+                    `<button class="year-btn ${year === selectedYear ? 'active' : ''}" 
+                             onclick="app.selectYear(${year})">${year}</button>`
+                ).join('');
+            }
+
+            // Select year for chart
+            function selectYear(year) {
+                selectedYear = year;
+                renderYearSelector();
+                renderChart();
+            }
+
+            // Render monthly chart
+            function renderChart() {
+                const canvas = document.getElementById('monthlyChart');
+                const ctx = canvas.getContext('2d');
+
+                // Destroy existing chart
+                if (chartInstance) {
+                    chartInstance.destroy();
+                }
+
+                // Prepare monthly data for selected year
+                const monthlyTotals = new Array(12).fill(0);
+                const monthNames = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 
+                                   'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+
+                expenses.forEach(row => {
+                    if (row.date) {
+                        const date = new Date(row.date + 'T00:00:00');
+                        if (date.getFullYear() === selectedYear) {
+                            const month = date.getMonth();
+                            monthlyTotals[month] += calculateTotal(row);
+                        }
+                    }
+                });
+
+                // Create chart
+                chartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: monthNames,
+                        datasets: [{
+                            label: `סכומים חודשיים ${selectedYear}`,
+                            data: monthlyTotals,
+                            backgroundColor: monthlyTotals.map(val => val < 0 ? '#ef4444' : '#3b82f6'),
+                            borderColor: monthlyTotals.map(val => val < 0 ? '#dc2626' : '#2563eb'),
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                rtl: true,
+                                textDirection: 'rtl'
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return value.toFixed(0);
+                                    }
+                                }
+                            },
+                            x: {
+                                ticks: {
+                                    font: {
+                                        family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
             // Send email
             function sendEmail() {
-                const csvContent = 'Date,House,Done,Total\n' + expenses.map(row => 
+                const csvContent = 'תאריך,בית,בוצע,סה"כ\n' + expenses.map(row => 
                     `${row.date},${row.house},${row.done},${calculateTotal(row)}`
                 ).join('\n');
                 
-                const subject = 'Expense Sheet Data - ' + new Date().toLocaleDateString();
-                const body = 'Please find the expense data below:\n\n' + csvContent;
+                const subject = 'נתוני הוצאות - ' + new Date().toLocaleDateString('he-IL');
+                const body = 'להלן נתוני ההוצאות:\n\n' + csvContent;
                 const mailtoLink = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
                 window.location.href = mailtoLink;
             }
@@ -547,7 +795,9 @@
                 deleteRow,
                 updateValue,
                 saveData,
-                sendEmail
+                sendEmail,
+                toggleChart,
+                selectYear
             };
         })();
     </script>
